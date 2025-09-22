@@ -34,11 +34,11 @@ CT20_HD222025_TOPIC_ONE = 'CT20_HD222025/192.168.100.101/request/one'
 CT20_HD222025_TOPIC_ALL = 'CT20_HD222025/192.168.100.101/request/all'
 CT20_HD222025_TOPIC_EFF = 'CT20_HD222025/192.168.100.101/request/eff'
 
-def publish(channels, topic):
-    import json
+def publish(channels, topic, value):
+    # import json cần phải ở cấp độ global hoặc ở đây
     payload = {
         "channels": channels,
-        "value": 1
+        "value": value # <--- Dùng giá trị 'value' truyền vào
     }
     client.publish(topic, json.dumps(payload))
 
@@ -563,8 +563,8 @@ def ecopark_publish_all(value):
 ##################---------API ĐIỀU KHIỂN CỦA CT20-HD222025 -------################
 #################
 
-@blueprint.route('/CT20-HD222025/all', methods=['GET'])
-def get_all_records():
+@blueprint.route('/<string:prefix>/all/<int:value>', methods=['GET'])
+def get_all_records(prefix, value):
     try:
         # Lấy tất cả bản ghi từ bảng
         all_records = db.session.query(Ct20_hd222025).all()
@@ -580,10 +580,16 @@ def get_all_records():
                 'model_building_vi': record.model_building_vi,
                 'model_building_en': record.model_building_en,
                 'building_type_vi': record.building_type_vi,
-                'building_type_en': record.building_type_en
+                'building_type_en': record.building_type_en,
+                'subzone_vi': record.subzone_vi,
+                'subzone_en': record.subzone_en
             })
             ids.append(record.id)
-        publish(ids, CT20_HD222025_TOPIC_ONE)
+        topic_one = build_dynamic_topic(prefix, "one")
+
+        # 5. Publish với Giá trị Động (value)
+        publish(ids, topic_one, value) # <--- Truyền 'value' vào hàm publish
+        
         return jsonify(result), 200
 
     except Exception as e:
@@ -701,14 +707,14 @@ def build_dynamic_topic(prefix, sub_topic):
     Kết quả: 'CT04-HD042025/192.168.100.101/request/eff'
     """
     # Bạn có thể giữ IP cố định hoặc cũng làm nó động
-    return f"{prefix}/192.168.100.101/{sub_topic}"
+    return f"{prefix}/192.168.100.101/request/{sub_topic}"
 
 # API đã sửa: chấp nhận tham số dynamic 'prefix'
 @blueprint.route("/<string:prefix>/eff/<int:id_eff>/<int:value>", methods=["POST"])
 def publish_eff_dynamic(prefix, id_eff, value):
     try:
         # 1. Xây dựng Topic dynamic
-        topic_eff = build_dynamic_topic(prefix, "request/eff")
+        topic_eff = build_dynamic_topic(prefix, "eff")
         payload = {
             "id": id_eff,
             "value": value
@@ -729,3 +735,55 @@ def publish_eff_dynamic(prefix, id_eff, value):
             "status": "error",
             "message": str(e)
         }), 500
+    
+@blueprint.route("/<string:prefix>/all/<int:value>", methods=['GET'])
+def get_all_records_dynamic(prefix, value):
+    try:
+        # 1. Xác định Model/Table Dynamic
+        
+        # Bạn cần phải ánh xạ model theo tên prefix (ví dụ: Ct20_hd222025) 
+        # Nếu model được tạo tự động (Automap Base), bạn có thể tìm nó trong db.Model.metadata.tables.
+        # Ở đây, tôi giả sử bạn có một cách để lấy Model Class dựa trên prefix.
+        
+        # Vì model cũ là Ct20_hd222025, ta xây dựng tên Class
+        model_name = prefix.replace('-', '_').title().replace('_', '', 1) # Ví dụ: 'Ct20_Hd222025'
+        
+        # Cần một cơ chế để lấy Model Class:
+        # KHUYẾN NGHỊ: Nếu bạn không sử dụng Automap, bạn có thể cần một dictionary ánh xạ:
+        # MODEL_MAP = {'CT20-HD222025': Ct20_hd222025, 'CT04-HD042025': Ct04_hd042025}
+        # DynamicModel = MODEL_MAP.get(prefix) 
+        
+        # Tạm thời sử dụng model cứng để minh họa logic chính:
+        DynamicModel = Ct20_hd222025 
+
+        # 2. Lấy tất cả bản ghi từ bảng (DynamicModel)
+        all_records = db.session.query(DynamicModel).all()
+
+        # 3. Chuyển đổi đối tượng và thu thập IDs
+        result = []
+        ids = []
+        for record in all_records:
+            record_data = {
+                'id': record.id,
+                'building_code': record.building_code,
+                # ... thêm các cột khác ở đây
+                'building_type_en': record.building_type_en
+            }
+            # Lấy các trường dữ liệu từ record dynamic:
+            for column in record.__table__.columns.keys():
+                record_data[column] = getattr(record, column)
+
+            result.append(record_data)
+            ids.append(record.id)
+            
+        # 4. Xây dựng Topic Dynamic
+        topic_one = build_dynamic_topic(prefix, "one")
+
+        # 5. Publish với Giá trị Động (value)
+        publish(ids, topic_one, value) # <--- Truyền 'value' vào hàm publish
+        
+        return jsonify(result), 200
+
+    except Exception as e:
+        # Nếu có lỗi (ví dụ: prefix không tồn tại hoặc lỗi DB)
+        return jsonify({'error': f'Đã xảy ra lỗi: {str(e)}'}), 500
