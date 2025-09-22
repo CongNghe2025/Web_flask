@@ -180,3 +180,33 @@ class Project_1(db.Model):
     def save(self):
         db.session.add(self)
         db.session.commit()
+
+#############################   Thông tin điều khiển Nhơn Trạch  #################################
+
+class Ct20_hd222025(db.Model):
+    __tablename__ = 'Ct20_hd222025'
+
+    id = db.Column(db.Integer, primary_key=True)
+    building_code = db.Column(db.String(100), nullable=True)  
+    group = db.Column(db.String(100), nullable=True)     
+    model_building_vi = db.Column(db.String(100), nullable=True)
+    model_building_en = db.Column(db.String(100), nullable=True)  
+    building_type_vi = db.Column(db.String(100), nullable=True)
+    building_type_en = db.Column(db.String(100), nullable=True)
+    subzone_vi = db.Column(db.String(100), nullable=True)
+    subzone_en = db.Column(db.String(100), nullable=True)
+
+
+    def __init__( self, id, building_code, group, model_building_vi, model_building_en, building_type_vi, building_type_en, subzone_vi, subzone_en):
+        self.id = id
+        self.building_code = building_code
+        self.group = group
+        self.model_building_vi = model_building_vi
+        self.model_building_en = model_building_en
+        self.building_type_vi = building_type_vi
+        self.building_type_en = building_type_en
+        self.subzone_vi = subzone_vi
+        self.subzone_en = subzone_en
+    def save(self):
+        db.session.add(self)
+        db.session.commit()

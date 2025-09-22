@@ -16,7 +16,7 @@ from apps import db
 import pandas as pd
 from apps.events import client
 from datetime import datetime, timedelta
-from apps.home.model import Eco_park_long_an, Role, Project_list, Method_list, User_project_role, Page, Permissions, Role_permissions, Project_1
+from apps.home.model import Eco_park_long_an, Ct20_hd222025
 from apps.authentication.models import Users
 
 UPLOAD_FOLDER = "/home/mhv/Downloads"
@@ -29,6 +29,19 @@ ECO_PARK_LONG_AN_TOPIC_CHECK_CONNECTION = 'CT04-HD042025/192.168.100.101/control
 ECO_PARK_TOPIC_ONE = 'ecopark/192.168.100.101/request/one'
 ECO_PARK_TOPIC_ALL = 'ecopark/192.168.100.101/request/all'
 ECO_PARK_TOPIC_EFF = 'ecopark/192.168.100.101/request/eff'
+##################---------TOPIC điều khiển mô hình CT20-HD222025-----------------###################
+CT20_HD222025_TOPIC_ONE = 'CT20_HD222025/192.168.100.101/request/one'
+CT20_HD222025_TOPIC_ALL = 'CT20_HD222025/192.168.100.101/request/all'
+CT20_HD222025_TOPIC_EFF = 'CT20_HD222025/192.168.100.101/request/eff'
+
+def publish(channels, topic):
+    import json
+    payload = {
+        "channels": channels,
+        "value": 1
+    }
+    client.publish(topic, json.dumps(payload))
+
 @blueprint.route('/index', methods=['GET'])
 @login_required
 
@@ -545,3 +558,133 @@ def ecopark_publish_all(value):
             "status": "error",
             "message": str(e)
         }), 500
+    
+#################                                                                           #################
+##################---------API ĐIỀU KHIỂN CỦA CT20-HD222025 -------################
+#################
+
+@blueprint.route('/CT20-HD222025/all', methods=['GET'])
+def get_all_records():
+    try:
+        # Lấy tất cả bản ghi từ bảng
+        all_records = db.session.query(Ct20_hd222025).all()
+
+        # Chuyển đổi các đối tượng thành danh sách các dictionary
+        result = []
+        ids = []
+        for record in all_records:
+            result.append({
+                'id': record.id,
+                'building_code': record.building_code,
+                'group': record.group,
+                'model_building_vi': record.model_building_vi,
+                'model_building_en': record.model_building_en,
+                'building_type_vi': record.building_type_vi,
+                'building_type_en': record.building_type_en
+            })
+            ids.append(record.id)
+        publish(ids, CT20_HD222025_TOPIC_ONE)
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Đã xảy ra lỗi: {str(e)}'}), 500
+
+@blueprint.route('/CT20-HD222025/upload_db', methods=['POST'])
+def upload_db_CT20_HD222025():
+    if 'excel_file' not in request.files:
+        return jsonify({'error': 'Không tìm thấy file nào được tải lên'}), 400
+
+    file = request.files['excel_file']
+    sheet_name = 'DATABASE'
+    
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'error': 'Chỉ chấp nhận file Excel (.xlsx, .xls)'}), 400
+
+    try:
+        # Chọn engine phù hợp
+        if file.filename.endswith('.xlsx'):
+            df = pd.read_excel(file, sheet_name=sheet_name, engine='openpyxl')
+        else:
+            df = pd.read_excel(file, sheet_name=sheet_name, engine='xlrd')
+
+        updated_count = 0
+        created_count = 0
+
+        for _, row in df.iterrows():
+            row_data = row.to_dict()
+            record_id = row_data.get('id')
+
+            # Bỏ qua các bản ghi không có id
+            if not record_id or pd.isna(record_id):
+                continue
+
+            # Chuyển NaN -> None để tránh lỗi khi insert
+            clean_data = {k: (None if pd.isna(v) else v) for k, v in row_data.items()}
+
+            # Tìm bản ghi theo ID
+            record = db.session.query(Ct20_hd222025).filter_by(id=int(record_id)).first()
+
+            if record:
+                # Cập nhật
+                for key, value in clean_data.items():
+                    if key != 'id' and value is not None and hasattr(record, key):
+                        setattr(record, key, value)
+                updated_count += 1
+            else:
+                # Tạo mới
+                new_record = Ct20_hd222025(**clean_data)
+                db.session.add(new_record)
+                created_count += 1
+
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Cập nhật dữ liệu từ Excel thành công!',
+            'created': created_count,
+            'updated': updated_count
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()  # In lỗi chi tiết ra console
+        db.session.rollback()
+        return jsonify({'error': f'Đã xảy ra lỗi: {str(e)}'}), 500
+
+@blueprint.route('/CT20-HD222025/filter', methods=['GET'])
+def filter_data():
+    filters = request.args
+    search_conditions = []
+    for key, value in filters.items(multi=True): # Sử dụng multi=True để lấy tất cả giá trị
+        # Kiểm tra xem trường đó có tồn tại trong mô hình không
+        if hasattr(Ct20_hd222025, key):
+            # Lấy các giá trị cho cùng một key
+            values = request.args.getlist(key)
+            if values:
+                # Nếu có nhiều giá trị, dùng `in_` để tạo điều kiện OR
+                search_conditions.append(getattr(Ct20_hd222025, key).in_(values))
+            else:
+                # Nếu chỉ có một giá trị, dùng ==
+                search_conditions.append(getattr(Ct20_hd222025, key) == value)
+
+    try:
+        # Áp dụng tất cả các điều kiện lọc với toán tử AND
+        results = db.session.query(Ct20_hd222025).filter(*search_conditions).all()
+
+        response_data = []
+        ids = []
+        for record in results:
+            response_data.append({
+                'id': record.id,
+                'building_code': record.building_code,
+                'group': record.group,
+                'model_building_vi': record.model_building_vi,
+                'model_building_en': record.model_building_en,
+                'building_type_vi': record.building_type_vi,
+                'building_type_en': record.building_type_en
+            })
+            ids.append(record.id)
+        publish(ids, CT20_HD222025_TOPIC_ONE)
+        return jsonify(response_data), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

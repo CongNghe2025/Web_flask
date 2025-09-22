@@ -69,7 +69,7 @@ def check(app):
     scheduler.start()
 
 broker = "scalemodelvn.com"    # Địa chỉ broker và đường dẫn đến file chứng chỉ CA
-ca_cert_file = "/home/mhv/Downloads/WEB-main/emqxsl_ca.pem"  # Đường dẫn đến file chứng chỉ CA
+ca_cert_file = "C:/Users/ktvkt04.mhv/SystemIOT/WEB_FLASK/Web_flask/emqxsl_ca.pem"  # Đường dẫn đến file chứng chỉ CA
 
 def create_app(config):
     app = Flask(__name__)
