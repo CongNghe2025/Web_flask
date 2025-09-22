@@ -680,7 +680,9 @@ def filter_data():
                 'model_building_vi': record.model_building_vi,
                 'model_building_en': record.model_building_en,
                 'building_type_vi': record.building_type_vi,
-                'building_type_en': record.building_type_en
+                'building_type_en': record.building_type_en,
+                'subzone_vi': record.subzone_vi,
+                'subzone_en': record.subzone_en
             })
             ids.append(record.id)
         publish(ids, CT20_HD222025_TOPIC_ONE)
@@ -688,3 +690,42 @@ def filter_data():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+def build_dynamic_topic(prefix, sub_topic):
+    """
+    Hàm tạo topic MQTT dựa trên prefix động từ URL.
+    
+    Ví dụ:
+    prefix = 'CT04-HD042025'
+    sub_topic = 'request/eff'
+    Kết quả: 'CT04-HD042025/192.168.100.101/request/eff'
+    """
+    # Bạn có thể giữ IP cố định hoặc cũng làm nó động
+    return f"{prefix}/192.168.100.101/{sub_topic}"
+
+# API đã sửa: chấp nhận tham số dynamic 'prefix'
+@blueprint.route("/<string:prefix>/eff/<int:id_eff>/<int:value>", methods=["POST"])
+def publish_eff_dynamic(prefix, id_eff, value):
+    try:
+        # 1. Xây dựng Topic dynamic
+        topic_eff = build_dynamic_topic(prefix, "request/eff")
+        payload = {
+            "id": id_eff,
+            "value": value
+        }
+
+        # 3. Publish lên Topic dynamic
+        client.publish(topic_eff, json.dumps(payload))
+
+        return jsonify({
+            "status": "success",
+            "topic": topic_eff, # Trả về topic để dễ debug
+            "payload": payload
+        }), 200
+
+    except Exception as e:
+        # Nếu publish bị lỗi (ví dụ: client chưa kết nối)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
