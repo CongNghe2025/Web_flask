@@ -34,12 +34,19 @@ CT20_HD222025_TOPIC_ONE = 'CT20_HD222025/192.168.100.101/request/one'
 CT20_HD222025_TOPIC_ALL = 'CT20_HD222025/192.168.100.101/request/all'
 CT20_HD222025_TOPIC_EFF = 'CT20_HD222025/192.168.100.101/request/eff'
 
-def publish(channels, topic, value):
+MODEL_MAP = {
+    'CT20_HD222025': Ct20_hd222025,
+    # ... thêm các prefix khác và Model tương ứng
+}
+
+def publish(channels, topic, value, rs_value=None):
     # import json cần phải ở cấp độ global hoặc ở đây
     payload = {
         "channels": channels,
         "value": value # <--- Dùng giá trị 'value' truyền vào
     }
+    if rs_value is not None:
+        payload["rs"] = rs_value
     client.publish(topic, json.dumps(payload))
 
 @blueprint.route('/index', methods=['GET'])
@@ -564,34 +571,24 @@ def ecopark_publish_all(value):
 #################
 
 @blueprint.route('/<string:prefix>/all/<int:value>', methods=['POST'])
-def get_all_records(prefix, value):
+def get_all_records_dynamic(prefix, value):
     try:
-        # Lấy tất cả bản ghi từ bảng
-        all_records = db.session.query(Ct20_hd222025).all()
-
-        # Chuyển đổi các đối tượng thành danh sách các dictionary
+        DynamicModel = MODEL_MAP.get(prefix)
+        if not DynamicModel:
+            return jsonify({'error': f'Không tìm thấy model cho prefix: {prefix}'}), 404
+        all_records = db.session.query(DynamicModel).all()
         result = []
         ids = []
         for record in all_records:
-            result.append({
-                'id': record.id,
-                'building_code': record.building_code,
-                'group': record.group,
-                'model_building_vi': record.model_building_vi,
-                'model_building_en': record.model_building_en,
-                'building_type_vi': record.building_type_vi,
-                'building_type_en': record.building_type_en,
-                'subzone_vi': record.subzone_vi,
-                'subzone_en': record.subzone_en
-            })
+            record_data = {}
+            for column in record.__table__.columns.keys():
+                record_data[column] = getattr(record, column)
+            result.append(record_data)
             ids.append(record.id)
+            
         topic_one = build_dynamic_topic(prefix, "one")
-
-        # 5. Publish với Giá trị Động (value)
-        publish(ids, topic_one, value) # <--- Truyền 'value' vào hàm publish
-        
+        publish(ids, topic_one, value)       
         return jsonify(result), 200
-
     except Exception as e:
         return jsonify({'error': f'Đã xảy ra lỗi: {str(e)}'}), 500
 
@@ -656,46 +653,43 @@ def upload_db_CT20_HD222025():
         db.session.rollback()
         return jsonify({'error': f'Đã xảy ra lỗi: {str(e)}'}), 500
 
-@blueprint.route('/CT20-HD222025/filter', methods=['GET'])
-def filter_data():
-    filters = request.args
-    search_conditions = []
-    for key, value in filters.items(multi=True): # Sử dụng multi=True để lấy tất cả giá trị
-        # Kiểm tra xem trường đó có tồn tại trong mô hình không
-        if hasattr(Ct20_hd222025, key):
-            # Lấy các giá trị cho cùng một key
-            values = request.args.getlist(key)
-            if values:
-                # Nếu có nhiều giá trị, dùng `in_` để tạo điều kiện OR
-                search_conditions.append(getattr(Ct20_hd222025, key).in_(values))
-            else:
-                # Nếu chỉ có một giá trị, dùng ==
-                search_conditions.append(getattr(Ct20_hd222025, key) == value)
-
+@blueprint.route('/<string:prefix>/filter/<int:gt>', methods=['GET'])
+def filter_data_dynamic(prefix, gt):
     try:
-        # Áp dụng tất cả các điều kiện lọc với toán tử AND
-        results = db.session.query(Ct20_hd222025).filter(*search_conditions).all()
+        DynamicModel = MODEL_MAP.get(prefix)
+        if not DynamicModel:
+            return jsonify({'error': f'Không tìm thấy model cho prefix: {prefix}'}), 404
+        
+        rs_param = request.args.get('rs', type=int)
+        filters = request.args
+        search_conditions = []
+        
+        for key, value in filters.items(multi=True):
+            if hasattr(DynamicModel, key) and key != 'rs': # Bỏ qua 'rs' trong phần lọc DB
+                values = request.args.getlist(key)
+                
+                if len(values) > 1:
+                    search_conditions.append(getattr(DynamicModel, key).in_(values))
+                elif values:
+                    search_conditions.append(getattr(DynamicModel, key) == values[0])
 
+        results = db.session.query(DynamicModel).filter(*search_conditions).all()
         response_data = []
         ids = []
         for record in results:
-            response_data.append({
-                'id': record.id,
-                'building_code': record.building_code,
-                'group': record.group,
-                'model_building_vi': record.model_building_vi,
-                'model_building_en': record.model_building_en,
-                'building_type_vi': record.building_type_vi,
-                'building_type_en': record.building_type_en,
-                'subzone_vi': record.subzone_vi,
-                'subzone_en': record.subzone_en
-            })
+            record_data = {}
+            for column in record.__table__.columns.keys():
+                record_data[column] = getattr(record, column)
+
+            response_data.append(record_data)
             ids.append(record.id)
-        publish(ids, CT20_HD222025_TOPIC_ONE)
+            
+        dynamic_topic = build_dynamic_topic(prefix, "one")
+        publish(ids, dynamic_topic, gt, rs_value=rs_param) 
         return jsonify(response_data), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Đã xảy ra lỗi: {str(e)}'}), 500
     
 def build_dynamic_topic(prefix, sub_topic):
     """
