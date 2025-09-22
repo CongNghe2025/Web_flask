@@ -563,7 +563,7 @@ def ecopark_publish_all(value):
 ##################---------API ĐIỀU KHIỂN CỦA CT20-HD222025 -------################
 #################
 
-@blueprint.route('/<string:prefix>/all/<int:value>', methods=['GET'])
+@blueprint.route('/<string:prefix>/all/<int:value>', methods=['POST'])
 def get_all_records(prefix, value):
     try:
         # Lấy tất cả bản ghi từ bảng
