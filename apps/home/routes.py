@@ -16,7 +16,7 @@ from apps import db
 import pandas as pd
 from apps.events import client
 from datetime import datetime, timedelta
-from apps.home.model import Eco_park_long_an, Ct20_hd222025
+from apps.home.model import Ct23_hd242026, Eco_park_long_an, Ct20_hd222025
 from apps.authentication.models import Users
 
 UPLOAD_FOLDER = "/home/mhv/Downloads"
@@ -36,6 +36,7 @@ CT20_HD222025_TOPIC_EFF = 'CT20_HD222025/192.168.100.101/request/eff'
 
 MODEL_MAP = {
     'CT20_HD222025': Ct20_hd222025,
+    'CT23_HD242026': Ct23_hd242026,
     # ... thêm các prefix khác và Model tương ứng
 }
 
@@ -591,6 +592,123 @@ def get_all_records_dynamic(prefix, value):
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'error': f'Đã xảy ra lỗi: {str(e)}'}), 500
+
+@blueprint.route('/<table_name>/upload_db', methods=['POST'])
+def upload_db(table_name):
+    model = MODEL_MAP.get(table_name.upper())
+    if not model:
+        return jsonify({
+            'error': f'Không hỗ trợ bảng: {table_name}'
+        }), 400
+
+    if 'excel_file' not in request.files:
+        return jsonify({
+            'error': 'Không tìm thấy file nào được tải lên'
+        }), 400
+
+    file = request.files['excel_file']
+    if not file.filename:
+        return jsonify({
+            'error': 'Tên file không hợp lệ'
+        }), 400
+
+    if not file.filename.lower().endswith(('.xlsx', '.xls')):
+        return jsonify({
+            'error': 'Chỉ chấp nhận file Excel (.xlsx, .xls)'
+        }), 400
+
+    sheet_name = 'DATABASE'
+
+    try:
+        if file.filename.lower().endswith('.xlsx'):
+            df = pd.read_excel(
+                file,
+                sheet_name=sheet_name,
+                engine='openpyxl'
+            )
+        else:
+            df = pd.read_excel(
+                file,
+                sheet_name=sheet_name,
+                engine='xlrd'
+            )
+
+        updated_count = 0
+        created_count = 0
+        skipped_count = 0
+
+        valid_columns = {
+            column.name
+            for column in model.__table__.columns
+        }
+
+
+        for _, row in df.iterrows():
+            row_data = row.to_dict()
+            record_id = row_data.get('id')
+
+            # Không có ID thì bỏ qua
+            if record_id is None or pd.isna(record_id):
+                skipped_count += 1
+                continue
+
+            clean_data = {}
+            for key, value in row_data.items():
+                # Chỉ nhận column tồn tại trong model
+                if key not in valid_columns:
+                    continue
+
+                if key == 'id':
+                    continue
+
+                # NaN -> None
+                if pd.isna(value):
+                    value = None
+
+                clean_data[key] = value
+
+            record_id = int(record_id)
+            record = (
+                db.session.query(model)
+                .filter_by(id=record_id)
+                .first()
+            )
+
+            if record:
+                for key, value in clean_data.items():
+                    # Chỉ update khi Excel có giá trị
+                    if value is not None:
+                        setattr(record, key, value)
+
+                updated_count += 1
+
+            else:
+                new_record = model(
+                    id=record_id,
+                    **clean_data
+                )
+
+                db.session.add(new_record)
+                created_count += 1
+
+        db.session.commit()
+
+        return jsonify({
+            'message': f'Cập nhật dữ liệu {table_name} từ Excel thành công!',
+            'table': model.__tablename__,
+            'created': created_count,
+            'updated': updated_count,
+            'skipped': skipped_count
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        db.session.rollback()
+
+        return jsonify({
+            'error': f'Đã xảy ra lỗi: {str(e)}'
+        }), 500
 
 @blueprint.route('/CT20-HD222025/upload_db', methods=['POST'])
 def upload_db_CT20_HD222025():

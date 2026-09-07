@@ -210,3 +210,33 @@ class Ct20_hd222025(db.Model):
     def save(self):
         db.session.add(self)
         db.session.commit()
+
+#############################   Thông tin điều khiển CT23-HD242026 #################################
+
+class Ct23_hd242026(db.Model):
+    __tablename__ = 'Ct23_hd242026'
+
+    id = db.Column(db.Integer, primary_key=True)
+    control_code = db.Column(db.String(100), nullable=True)  
+    port = db.Column(db.Integer, nullable=True)     
+    esp = db.Column(db.String(100), nullable=True)
+    layer1 = db.Column(db.String(100), nullable=True)  
+    layer2 = db.Column(db.String(100), nullable=True)
+    layer3 = db.Column(db.String(100), nullable=True)
+    layer4 = db.Column(db.String(100), nullable=True)
+    describe_vi = db.Column(db.Text, nullable=True)
+
+
+    def __init__( self, id, control_code, port, esp, layer1, layer2, layer3, layer4, describe_vi):
+        self.id = id
+        self.control_code = control_code
+        self.port = port
+        self.esp = esp
+        self.layer1 = layer1
+        self.layer2 = layer2
+        self.layer3 = layer3
+        self.layer4 = layer4
+        self.describe_vi = describe_vi
+    def save(self):
+        db.session.add(self)
+        db.session.commit()
