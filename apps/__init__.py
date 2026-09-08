@@ -16,7 +16,7 @@ from flask_cors import CORS
 
 db = SQLAlchemy()
 login_manager = LoginManager()
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 def register_extensions(app):
 
