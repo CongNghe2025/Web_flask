@@ -9,14 +9,14 @@ from flask import Flask ,current_app
 from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy
 from importlib import import_module
-
+from pathlib import Path
 from apps.events import socketio, events_init
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_cors import CORS 
 
 db = SQLAlchemy()
 login_manager = LoginManager()
-
+BASE_DIR = Path(__file__).resolve().parent
 
 def register_extensions(app):
 
@@ -69,7 +69,7 @@ def check(app):
     scheduler.start()
 
 broker = "scalemodelvn.com"    # Địa chỉ broker và đường dẫn đến file chứng chỉ CA
-ca_cert_file = "C:/Users/ktvkt04.mhv/SystemIOT/WEB_FLASK/Web_flask/emqxsl_ca.pem"  # Đường dẫn đến file chứng chỉ CA
+ca_cert_file = BASE_DIR / "emqxsl_ca.pem"  # Đường dẫn đến file chứng chỉ CA
 
 def create_app(config):
     app = Flask(__name__)
