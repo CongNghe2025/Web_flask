@@ -675,12 +675,18 @@ def upload_db(table_name):
             )
 
             if record:
-                for key, value in clean_data.items():
-                    # Chỉ update khi Excel có giá trị
-                    if value is not None:
-                        setattr(record, key, value)
+                changed = False
 
-                updated_count += 1
+                for key, value in clean_data.items():
+                    if value is not None:
+                        old_value = getattr(record, key)
+
+                        if old_value != value:
+                            setattr(record, key, value)
+                            changed = True
+
+                if changed:
+                    updated_count += 1
 
             else:
                 new_record = model(
@@ -690,7 +696,8 @@ def upload_db(table_name):
 
                 db.session.add(new_record)
                 created_count += 1
-
+                
+        db.session.flush()
         db.session.commit()
 
         return jsonify({
@@ -801,6 +808,45 @@ def filter_data_dynamic(prefix, gt):
 
             response_data.append(record_data)
             ids.append(record.id)
+            
+        dynamic_topic = build_dynamic_topic(prefix, "one")
+        publish(ids, dynamic_topic, gt, rs_value=rs_param) 
+        return jsonify(response_data), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Đã xảy ra lỗi: {str(e)}'}), 500
+
+#API NÀY TRẢ VỀ PORT THAY VÌ ID
+@blueprint.route('/<string:prefix>/filter/<int:gt>/ver2', methods=['GET'])
+def filter_data_dynamic_v2(prefix, gt):
+    try:
+        DynamicModel = MODEL_MAP.get(prefix)
+        if not DynamicModel:
+            return jsonify({'error': f'Không tìm thấy model cho prefix: {prefix}'}), 404
+        
+        rs_param = request.args.get('rs', type=int)
+        filters = request.args
+        search_conditions = []
+        
+        for key, value in filters.items(multi=True):
+            if hasattr(DynamicModel, key) and key != 'rs': # Bỏ qua 'rs' trong phần lọc DB
+                values = request.args.getlist(key)
+                
+                if len(values) > 1:
+                    search_conditions.append(getattr(DynamicModel, key).in_(values))
+                elif values:
+                    search_conditions.append(getattr(DynamicModel, key) == values[0])
+
+        results = db.session.query(DynamicModel).filter(*search_conditions).all()
+        response_data = []
+        ids = []
+        for record in results:
+            record_data = {}
+            for column in record.__table__.columns.keys():
+                record_data[column] = getattr(record, column)
+
+            response_data.append(record_data)
+            ids.append(record.port)
             
         dynamic_topic = build_dynamic_topic(prefix, "one")
         publish(ids, dynamic_topic, gt, rs_value=rs_param) 
