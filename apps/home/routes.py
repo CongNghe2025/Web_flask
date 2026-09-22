@@ -825,26 +825,26 @@ def filter_data_dynamic_v2(prefix, gt):
             return jsonify({'error': f'Không tìm thấy model cho prefix: {prefix}'}), 404
         
         rs_param = request.args.get('rs', type=int)
-        filters = request.args
         search_conditions = []
         
-        for key, value in filters.items(multi=True):
-            if hasattr(DynamicModel, key) and key != 'rs': # Bỏ qua 'rs' trong phần lọc DB
-                values = request.args.getlist(key)
+        for key, values in request.args.lists():
+            if key == 'rs':
+                continue  # Bỏ qua 'rs'
                 
+            if hasattr(DynamicModel, key):
                 if len(values) > 1:
+                    # Nếu có từ 2 giá trị trở lên -> Dùng IN
                     search_conditions.append(getattr(DynamicModel, key).in_(values))
                 elif values:
+                    # Nếu chỉ có 1 giá trị -> Dùng ==
                     search_conditions.append(getattr(DynamicModel, key) == values[0])
 
         results = db.session.query(DynamicModel).filter(*search_conditions).all()
+        
         response_data = []
         ids = []
         for record in results:
-            record_data = {}
-            for column in record.__table__.columns.keys():
-                record_data[column] = getattr(record, column)
-
+            record_data = {column: getattr(record, column) for column in record.__table__.columns.keys()}
             response_data.append(record_data)
             ids.append(record.port)
             
